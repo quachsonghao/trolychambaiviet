@@ -2,8 +2,8 @@ import React from 'react';
 import { PenTool, BookOpen, Users, BarChart3, BookmarkCheck, GraduationCap, ShieldCheck } from 'lucide-react';
 
 interface Props {
-  activeTab: 'grading' | 'history' | 'analytics' | 'handbook';
-  onTabChange: (tab: 'grading' | 'history' | 'analytics' | 'handbook') => void;
+  activeTab: 'grading' | 'history' | 'analytics' | 'commentBank' | 'handbook';
+  onTabChange: (tab: 'grading' | 'history' | 'analytics' | 'commentBank' | 'handbook') => void;
   evaluationCount: number;
 }
 
@@ -91,6 +91,18 @@ export const Header: React.FC<Props> = ({ activeTab, onTabChange, evaluationCoun
           >
             <BarChart3 className="w-4 h-4" />
             <span>Thống kê chấm bài (Theo bài / Theo tổng)</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('commentBank')}
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-all duration-150 ${
+              activeTab === 'commentBank'
+                ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-600/30'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+            }`}
+          >
+            <BookmarkCheck className="w-4 h-4" />
+            <span>Ngân hàng lời nhận xét</span>
           </button>
 
           <button

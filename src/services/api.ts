@@ -4,12 +4,15 @@ import {
   AssignmentStats,
   TotalOverallStats,
   GradedStudentSummary,
+  CommentBankItem,
 } from '../types';
+import { DEFAULT_COMMENT_BANK } from '../data/commentBankData';
 
 const STORAGE_KEYS = {
   HISTORY: 'tro_ly_cham_bai_history_v2',
   STUDENTS: 'tro_ly_cham_bai_students_lop52_v2',
   CURRENT_CLASS: 'tro_ly_cham_bai_current_class_v2',
+  COMMENT_BANK: 'tro_ly_cham_bai_comment_bank_v2',
 };
 
 // Official roster of 42 students from Class 5/2 as provided by teacher
@@ -601,5 +604,94 @@ export const StorageService = {
       errorCategoryCount: overall.errorCategoryCount,
       topCommonErrors: overall.topCommonErrors,
     };
+  },
+
+  // ==================== COMMENT BANK (NGÂN HÀNG LỜI NHẬN XÉT) ====================
+  getCommentBank(): CommentBankItem[] {
+    try {
+      // Check legacy key if teacher had created custom comments
+      let legacyCustom: CommentBankItem[] = [];
+      try {
+        const legacyStored = localStorage.getItem('tro_ly_cham_bai_comment_bank_v1');
+        if (legacyStored) {
+          const legacyParsed = JSON.parse(legacyStored);
+          if (Array.isArray(legacyParsed)) {
+            legacyCustom = legacyParsed.filter((i: CommentBankItem) => i.isCustom);
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const stored = localStorage.getItem(STORAGE_KEYS.COMMENT_BANK);
+      if (!stored) {
+        const initial = [...legacyCustom, ...DEFAULT_COMMENT_BANK];
+        localStorage.setItem(STORAGE_KEYS.COMMENT_BANK, JSON.stringify(initial));
+        return initial;
+      }
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // If stored bank has fewer items than current DEFAULT_COMMENT_BANK, refresh with default while preserving custom
+        if (parsed.length < DEFAULT_COMMENT_BANK.length) {
+          const customItems = parsed.filter((i: CommentBankItem) => i.isCustom);
+          const combined = [
+            ...customItems,
+            ...legacyCustom.filter((lc) => !customItems.some((ci) => ci.id === lc.id)),
+            ...DEFAULT_COMMENT_BANK,
+          ];
+          localStorage.setItem(STORAGE_KEYS.COMMENT_BANK, JSON.stringify(combined));
+          return combined;
+        }
+        return parsed;
+      }
+      const fallback = [...legacyCustom, ...DEFAULT_COMMENT_BANK];
+      return fallback;
+    } catch {
+      return DEFAULT_COMMENT_BANK;
+    }
+  },
+
+  saveCustomComment(item: Omit<CommentBankItem, 'id' | 'isCustom'>): CommentBankItem {
+    const newItem: CommentBankItem = {
+      ...item,
+      id: `custom-cb-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      isCustom: true,
+    };
+    const current = this.getCommentBank();
+    const updated = [newItem, ...current];
+    try {
+      localStorage.setItem(STORAGE_KEYS.COMMENT_BANK, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error saving custom comment:', e);
+    }
+    return newItem;
+  },
+
+  updateComment(id: string, updatedFields: Partial<CommentBankItem>): void {
+    const current = this.getCommentBank();
+    const updated = current.map((c) => (c.id === id ? { ...c, ...updatedFields } : c));
+    try {
+      localStorage.setItem(STORAGE_KEYS.COMMENT_BANK, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error updating comment:', e);
+    }
+  },
+
+  deleteComment(id: string): void {
+    const current = this.getCommentBank();
+    const updated = current.filter((c) => c.id !== id);
+    try {
+      localStorage.setItem(STORAGE_KEYS.COMMENT_BANK, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error deleting comment:', e);
+    }
+  },
+
+  resetCommentBank(): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.COMMENT_BANK, JSON.stringify(DEFAULT_COMMENT_BANK));
+    } catch (e) {
+      console.error('Error resetting comment bank:', e);
+    }
   },
 };

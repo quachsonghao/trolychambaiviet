@@ -117,6 +117,13 @@ NHIỆM VỤ CỐT LÕI:
    - NÊU RÕ HẠN CHẾ VÀ HƯỚNG SỬA CỤ THỂ: Nhắc nhở chân thành, mang tính khích lệ, hướng dẫn học sinh cách khắc phục từng lỗi.
    - LỜI VĂN ĐỘNG VIÊN, ẤM ÁP: Ngôn từ gần gũi, không chê bai nặng nề, giúp học sinh thêm yêu thích môn Tiếng Việt.
 
+5. NGUYÊN TẮC BẮT BUỘC ĐỐI VỚI 'loi_nhan_xet_hoc_sinh' (LỜI NHẬN XÉT VÀO VỞ HỌC SINH):
+   Đây là lời phê của giáo viên trực tiếp vào trang vở của học sinh. Học sinh và phụ huynh sẽ đọc từng chữ. Lời nhận xét này phải có tác dụng sư phạm sâu sắc, NGẮN GỌN, SÚC TÍCH (KHOẢNG 20 - 32 TỪ, TỐI ĐA 35 TỪ) để giáo viên ghi tay vào vở nhanh chóng mà không tốn nhiều thời gian, nhưng vẫn đảm bảo đủ 3 phần:
+   a) KHEN NGỢI ĐỘNG VIÊN: Ghi nhận nỗ lực hoặc điểm sáng của em trước (1 vế ngắn).
+   b) CHỈ RÕ HẠN CHẾ CỤ THỂ GIÚP HỌC SINH TỰ NHẬN BIẾT LỖI CỦA MÌNH (nếu có hạn chế): Tuyệt đối KHÔNG nhận xét chung chung sáo rỗng. Phải chỉ rõ hạn chế cụ thể (từ nào sai chính tả, câu nào lủng củng hoặc chưa đủ ý).
+   c) HƯỚNG DẪN BIỆN PHÁP KHẮC PHỤC NGẮN GỌN: Đưa ra chỉ dẫn hành động ngắn (ví dụ: "Em nhớ viết lại 2 từ này xuống cuối trang nhé", "Em đọc lại bài để chấm câu cho rõ ý nhé", "Em thêm từ so sánh 'như' để cảnh thêm sinh động nhé").
+   *LƯU Ý ĐẶC BIỆT: Không viết lời phê vào vở quá dài dòng, cần cô đọng để giáo viên có thể ghi tay vào vở học sinh trong vòng 30 giây.*
+
 BẠN BẮT BUỘC TRẢ VỀ DỮ LIỆU ĐỊNH DẠNG JSON HỢP LỆ THEO CẤU TRÚC SAU:
 {
   "noi_dung_bai_viet": "Toàn văn nội dung bài viết của học sinh (nếu đọc từ ảnh chụp thì phiên âm/chép lại đầy đủ và chính xác từng chữ của học sinh, kể cả các chỗ viết sai chính tả)",
@@ -178,6 +185,12 @@ NHIỆM VỤ CỐT LÕI:
    - Nêu rõ phần kiến thức còn hổng hoặc dễ nhầm lẫn (ví dụ: nhầm từ đồng âm với từ nhiều nghĩa; nhầm trạng ngữ với vế câu; câu ghép vế 2 thiếu chủ ngữ...).
    - Đưa ra lời nhận xét ngắn gọn để giáo viên phê vào vở bài tập / Sổ theo dõi học sinh.
    - Gợi ý 1-2 kiến thức trọng tâm cần ôn tập ("kien_thuc_can_on_tap").
+
+5. NGUYÊN TẮC BẮT BUỘC ĐỐI VỚI 'loi_nhan_xet_hoc_sinh' (LỜI NHẬN XÉT VÀO VỞ BÀI TẬP LTVC):
+   - Phải NGẮN GỌN, SÚC TÍCH (khoảng 20 - 30 từ, tối đa 35 từ) để giáo viên ghi nhanh vào vở học sinh.
+   - Khen ngợi nỗ lực hoặc bài làm tốt trước.
+   - NẾU CÓ CÂU SAI HOẶC HẠN CHẾ: Chỉ rõ câu nào chưa đúng (Bài 1/Bài 2), phân tích ngắn gọn lý do vì sao chưa đúng (ví dụ: 'Ở Bài 2b, em chú ý phân biệt từ đồng âm và từ nhiều nghĩa nhé...').
+   - Hướng dẫn em hành động sửa ngắn gọn ngay vào vở.
 
 CẤU TRÚC JSON TRẢ VỀ:
 {

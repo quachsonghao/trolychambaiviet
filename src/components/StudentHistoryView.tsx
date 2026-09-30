@@ -41,6 +41,8 @@ export const StudentHistoryView: React.FC<Props> = ({
   const [activePrintEval, setActivePrintEval] = useState<EvaluationResult | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [showClearModal, setShowClearModal] = useState<boolean>(false);
+  const [itemToDelete, setItemToDelete] = useState<{ id: string; studentName: string; title: string } | null>(null);
+  const [showResetClassModal, setShowResetClassModal] = useState<boolean>(false);
 
   // New Student Modal state
   const [isAddStudentOpen, setIsAddStudentOpen] = useState<boolean>(false);
@@ -61,25 +63,23 @@ export const StudentHistoryView: React.FC<Props> = ({
   const vietCount = history.filter((h) => h.phan_mon !== 'ltvc').length;
   const ltvcCount = history.filter((h) => h.phan_mon === 'ltvc').length;
 
-  const handleResetClass52 = () => {
-    if (confirm('Khôi phục lại danh sách gốc 42 học sinh Lớp 5/2?')) {
-      const resetList = StorageService.resetToClass52();
-      setStudents(resetList);
-      loadData();
-    }
+  const handleConfirmResetClass52 = () => {
+    const resetList = StorageService.resetToClass52();
+    setStudents(resetList);
+    loadData();
+    setShowResetClassModal(false);
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm('Bạn có chắc chắn muốn xóa bài nhận xét này khỏi sổ theo dõi?')) {
-      StorageService.deleteEvaluation(id);
-      loadData();
-      onHistoryChanged?.();
-    }
+  const handleConfirmDeleteItem = () => {
+    if (!itemToDelete) return;
+    StorageService.deleteEvaluation(itemToDelete.id);
+    loadData();
+    onHistoryChanged?.();
+    setItemToDelete(null);
   };
 
   const handleClearAllHistory = () => {
@@ -158,8 +158,8 @@ export const StudentHistoryView: React.FC<Props> = ({
 
           <button
             type="button"
-            onClick={handleResetClass52}
-            className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-semibold transition"
+            onClick={() => setShowResetClassModal(true)}
+            className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-semibold transition cursor-pointer"
             title="Khôi phục danh sách chuẩn 42 học sinh lớp 5/2"
           >
             Đồng bộ 42 HS Lớp 5/2
@@ -573,9 +573,12 @@ export const StudentHistoryView: React.FC<Props> = ({
 
                     <button
                       type="button"
-                      onClick={(e) => handleDelete(item.id, e)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setItemToDelete({ id: item.id, studentName: item.ten_hoc_sinh, title: item.de_bai });
+                      }}
                       title="Xóa bài nhận xét"
-                      className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                      className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -854,6 +857,82 @@ export const StudentHistoryView: React.FC<Props> = ({
                 className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900 transition cursor-pointer"
               >
                 Hủy bỏ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Single Item Modal */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-stone-200 p-6 space-y-4 animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-900 text-base">Xác nhận xóa bài nhận xét</h3>
+                <p className="text-xs text-stone-500">Học sinh: {itemToDelete.studentName}</p>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
+              Bạn có chắc chắn muốn xóa bài nhận xét cho đề bài <strong>"{itemToDelete.title}"</strong> của học sinh <strong>{itemToDelete.studentName}</strong> khỏi sổ theo dõi?
+            </p>
+
+            <div className="pt-2 flex justify-end gap-2.5 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteItem}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              >
+                Xóa bài này
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Class 5/2 Roster Modal */}
+      {showResetClassModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-stone-200 p-6 space-y-4 animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-900 text-base">Đồng bộ danh sách Lớp 5/2</h3>
+                <p className="text-xs text-stone-500">Chuẩn hóa 42 học sinh theo sổ bộ</p>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
+              Khôi phục lại danh sách chuẩn 42 học sinh của Lớp 5/2 theo đúng thông tin ngày sinh và số thứ tự gốc?
+            </p>
+
+            <div className="pt-2 flex justify-end gap-2.5 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setShowResetClassModal(false)}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmResetClass52}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              >
+                Đồng ý khôi phục
               </button>
             </div>
           </div>

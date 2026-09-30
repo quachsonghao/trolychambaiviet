@@ -31,6 +31,9 @@ import {
   CheckSquare,
   HelpCircle,
   ArrowUpRight,
+  BookmarkCheck,
+  MessageSquare,
+  Search,
 } from 'lucide-react';
 import {
   GRADE_5_LESSONS,
@@ -44,6 +47,7 @@ import {
   SpellingOrGrammarError,
   LearningDomain,
   LtvcQuestionCheck,
+  CommentBankItem,
 } from '../types';
 import { StorageService } from '../services/api';
 import { PrintEvaluationSheet } from './PrintEvaluationSheet';
@@ -88,6 +92,12 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState<boolean>(false);
+
+  // Comment Bank Picker State
+  const [showCommentBankModal, setShowCommentBankModal] = useState<boolean>(false);
+  const [commentBankItems, setCommentBankItems] = useState<CommentBankItem[]>([]);
+  const [commentBankSearch, setCommentBankSearch] = useState<string>('');
+  const [commentBankToast, setCommentBankToast] = useState<string | null>(null);
 
   // Fullscreen Image Lightbox
   const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
@@ -189,27 +199,71 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
     }
   };
 
+  // Helper: Compress and downsample image file to keep payload fast and light
+  const compressImageFile = (file: File): Promise<{ dataUrl: string; mimeType: string }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const resultStr = e.target?.result as string;
+        if (!resultStr) {
+          resolve({ dataUrl: '', mimeType: file.type || 'image/jpeg' });
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          const MAX_DIM = 1600;
+          let { width, height } = img;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            resolve({ dataUrl, mimeType: 'image/jpeg' });
+          } else {
+            resolve({ dataUrl: resultStr, mimeType: file.type || 'image/jpeg' });
+          }
+        };
+        img.onerror = () => {
+          resolve({ dataUrl: resultStr, mimeType: file.type || 'image/jpeg' });
+        };
+        img.src = resultStr;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Handle Multi-file Upload
-  const handleImageFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const fileArray = Array.from(files);
-    fileArray.forEach((file, index) => {
-      const reader = new FileReader();
-      reader.onload = () => {
+    for (let index = 0; index < fileArray.length; index++) {
+      const file = fileArray[index];
+      const compressed = await compressImageFile(file);
+      if (compressed.dataUrl) {
         setImagesList((prev) => [
           ...prev,
           {
             id: `img-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 4)}`,
-            dataUrl: reader.result as string,
+            dataUrl: compressed.dataUrl,
             name: file.name,
-            mimeType: file.type || 'image/jpeg',
+            mimeType: compressed.mimeType,
           },
         ]);
-      };
-      reader.readAsDataURL(file);
-    });
+      }
+    }
 
     // Reset input so same files can be re-selected if needed
     e.target.value = '';
@@ -232,7 +286,7 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
     setImagesList((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Camera start & stream setup with robust fallback
+  // Camera start & stream setup with robust progressive fallback
   const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -243,41 +297,58 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
 
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
       }
-      setIsCameraActive(true);
 
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
+      let stream: MediaStream | null = null;
+      const constraintCandidates: MediaStreamConstraints[] = [
+        {
+          video: {
+            facingMode: { ideal: mode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        },
+        {
           video: {
             facingMode: mode,
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
           },
-        });
-      } catch (firstErr) {
-        // If specific resolution or facingMode constraint fails, fallback to standard video
-        console.warn('Fallback to standard video constraints:', firstErr);
-        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+        },
+        {
           video: true,
-        });
+          audio: false,
+        },
+      ];
+
+      for (const constraints of constraintCandidates) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          if (stream) break;
+        } catch (candidateErr) {
+          console.warn('Candidate constraint failed, trying next:', candidateErr);
+        }
+      }
+
+      if (!stream) {
+        throw new Error('Không thể khởi tạo luồng camera');
       }
 
       mediaStreamRef.current = stream;
+      setIsCameraActive(true);
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(() => {});
       }
     } catch (err) {
-      console.error('Không thể bật camera:', err);
+      console.warn('Không thể mở stream camera trực tiếp, chuyển sang máy ảnh thiết bị:', err);
       setIsCameraActive(false);
-      if (
-        confirm(
-          'Không thể khởi động trực tiếp Camera trên trình duyệt này (do quyền truy cập hoặc thiết bị). Bạn có muốn mở ứng dụng máy ảnh trên thiết bị để chụp ảnh bài viết không?'
-        )
-      ) {
+      // Fallback directly to native camera input without blocking prompt
+      try {
         cameraFileInputRef.current?.click();
-      }
+      } catch (_) {}
     }
   };
 
@@ -305,23 +376,30 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
       setFlashEffect(true);
       setTimeout(() => setFlashEffect(false), 200);
 
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth || 1920;
-      canvas.height = videoRef.current.videoHeight || 1080;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        const pageNum = imagesList.length + 1;
-        setImagesList((prev) => [
-          ...prev,
-          {
-            id: `snap-${Date.now()}-${pageNum}`,
-            dataUrl,
-            name: `Trang ${pageNum} (Chụp trực tiếp)`,
-            mimeType: 'image/jpeg',
-          },
-        ]);
+      try {
+        const vid = videoRef.current;
+        const w = (vid.videoWidth && vid.videoWidth > 0) ? vid.videoWidth : 1280;
+        const h = (vid.videoHeight && vid.videoHeight > 0) ? vid.videoHeight : 720;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(vid, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+          const pageNum = imagesList.length + 1;
+          setImagesList((prev) => [
+            ...prev,
+            {
+              id: `snap-${Date.now()}-${pageNum}`,
+              dataUrl,
+              name: `Trang ${pageNum} (Chụp trực tiếp)`,
+              mimeType: 'image/jpeg',
+            },
+          ]);
+        }
+      } catch (captureErr) {
+        console.warn('Lỗi khi chụp hình từ camera canvas:', captureErr);
       }
     }
   };
@@ -350,12 +428,22 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
           })),
         }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          res.ok
+            ? 'Dữ liệu phản hồi nhận diện ảnh không đúng định dạng JSON.'
+            : `Máy chủ phản hồi mã lỗi ${res.status}. Vui lòng thử lại sau ít giây.`
+        );
+      }
       if (data.success && data.text) {
         setWritingText(data.text);
         setInputTab('text');
       } else {
-        throw new Error(data.message || 'Lỗi nhận diện');
+        throw new Error(data.message || 'Lỗi nhận diện chữ viết trong ảnh.');
       }
     } catch (e: any) {
       setAnalysisError(e.message || 'Không thể trích xuất chữ viết tay. Bạn có thể gõ trực tiếp văn bản.');
@@ -405,7 +493,7 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
   // Core Evaluation Action
   const handleStartAnalysis = async () => {
     if (!writingText.trim() && imagesList.length === 0) {
-      alert('Vui lòng chụp/tải ảnh bài làm của học sinh (hoặc nhập văn bản) trước khi phân tích!');
+      setAnalysisError('Vui lòng chụp/tải ảnh bài làm của học sinh (hoặc nhập văn bản) trước khi phân tích!');
       return;
     }
 
@@ -439,7 +527,18 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
         body: JSON.stringify(payload),
       });
 
-      const resData = await response.json();
+      const rawText = await response.text();
+      let resData: any;
+      try {
+        resData = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          response.ok
+            ? 'Dữ liệu phản hồi từ máy chủ không đúng định dạng JSON.'
+            : `Máy chủ phản hồi mã lỗi ${response.status} (${response.statusText || 'Lỗi mạng'}). Vui lòng thử lại sau ít giây.`
+        );
+      }
+
       if (!resData.success) {
         throw new Error(resData.message || 'Không thể chấm bài. Vui lòng thử lại.');
       }
@@ -491,8 +590,17 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
         setWritingText(newEval.noi_dung_bai_viet);
       }
     } catch (err: any) {
-      console.error(err);
-      setAnalysisError(err.message || 'Lỗi kết nối máy chủ hoặc API Gemini.');
+      console.error('Lỗi khi chấm bài:', err);
+      let msg = String(err?.message || err || '');
+      if (
+        msg.includes('did not match the expected pattern') ||
+        msg.includes('SYNTAX_ERR') ||
+        msg.includes('SyntaxError')
+      ) {
+        msg =
+          'Lỗi xử lý cú pháp phản hồi (do tính nghiêm ngặt của trình duyệt WebKit/Safari khi tải dữ liệu). Hệ thống đã tự động làm mới, Thầy/Cô hãy bấm "Thử lại ngay" bên dưới để hoàn tất chấm bài nhé.';
+      }
+      setAnalysisError(msg || 'Lỗi kết nối máy chủ hoặc API Gemini. Thầy/Cô vui lòng thử lại sau ít giây.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -615,6 +723,17 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
     setTimeout(() => setCopiedSentenceIdx(null), 2000);
   };
 
+  // Safe word replacement for fill-in-the-blank practice
+  const safeReplaceBlank = (sentence: string | undefined, word: string) => {
+    if (!sentence || !word) return sentence || '.......';
+    try {
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return sentence.replace(new RegExp(escaped, 'gi'), '.......');
+    } catch {
+      return sentence.split(word).join('.......');
+    }
+  };
+
   // Generate tailored practice exercises text for teacher to copy
   const getRemedialExercisesText = () => {
     if (!evaluationResult) return '';
@@ -629,7 +748,7 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
       text += `1. BÀI TẬP CHÍNH TẢ (Lựa chọn từ đúng điền vào chỗ trống):\n`;
       spellingErrors.forEach((e, idx) => {
         text += `   ${idx + 1}. Em hãy chọn giữa [${e.sua_lai} / ${e.tu_hoac_cau_sai}] để điền vào câu:\n`;
-        text += `      "${e.cau_sua_hoan_chinh ? e.cau_sua_hoan_chinh.replace(new RegExp(e.sua_lai, 'gi'), '.......') : `.......`}"\n`;
+        text += `      "${safeReplaceBlank(e.cau_sua_hoan_chinh, e.sua_lai)}"\n`;
       });
       text += `\n`;
     }
@@ -1279,9 +1398,19 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
             </div>
 
             {analysisError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
-                <span>{analysisError}</span>
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                  <span className="leading-relaxed">{analysisError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleStartAnalysis}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shrink-0 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Thử lại ngay</span>
+                </button>
               </div>
             )}
           </div>
@@ -1574,21 +1703,83 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
                 />
               </div>
 
-              {/* SECTION 3: LỜI NHẬN XÉT SỔ THEO DÕI / LỜI PHÊ VÀO VỞ */}
+              {/* SECTION 3A: LỜI NHẬN XÉT GHI VÀO VỞ HỌC SINH (PHÊ TRỰC TIẾP VÀO BÀI LÀM) */}
+              <div className="bg-gradient-to-r from-amber-50/80 via-yellow-50/50 to-orange-50/40 border-2 border-amber-300 rounded-2xl p-5 space-y-2.5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-amber-700" />
+                    <label className="text-xs font-extrabold text-amber-950 uppercase tracking-wide">
+                      Lời nhận xét vào vở học sinh (Giúp em nhận ra hạn chế & cách sửa)
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCommentBankItems(StorageService.getCommentBank());
+                        setShowCommentBankModal(true);
+                      }}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                      title="Chọn mẫu nhận xét phù hợp với tình huống của học sinh"
+                    >
+                      <BookmarkCheck className="w-3.5 h-3.5" />
+                      <span>Chọn từ Ngân hàng lời nhận xét</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(evaluationResult.loi_nhan_xet_hoc_sinh, 'loiphe_vo')}
+                      className="text-amber-900 bg-white hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition shadow-2xs"
+                    >
+                      {copiedField === 'loiphe_vo' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedField === 'loiphe_vo' ? 'Đã chép' : 'Chép lời phê'}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-amber-900/80 italic">
+                  💡 Thầy/Cô ghi trực tiếp lời này vào trang vở học sinh: Khen ngợi nỗ lực trước, <strong>chỉ rõ hạn chế cụ thể</strong> (nếu có lỗi chính tả, câu què, bài sơ sài...) và <strong>hướng dẫn em cách sửa</strong>.
+                </p>
+
+                <textarea
+                  value={evaluationResult.loi_nhan_xet_hoc_sinh}
+                  onChange={(e) => updateResultField('loi_nhan_xet_hoc_sinh', e.target.value)}
+                  rows={3}
+                  className="w-full bg-white border border-amber-300 rounded-xl p-3 text-sm text-stone-900 leading-relaxed font-normal focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                  placeholder="Nhập lời phê vào vở cho học sinh..."
+                />
+              </div>
+
+              {/* SECTION 3B: LỜI NHẬN XÉT SỔ THEO DÕI ĐÁNH GIÁ (CHUẨN TT 27) */}
               <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4.5 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Edit3 className="w-4 h-4 text-stone-600" />
-                    Lời nhận xét vào sổ theo dõi / Lời phê vào vở
+                    Lời nhận xét vào Sổ theo dõi đánh giá (Khoảng 2 câu theo TT 27)
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyText(evaluationResult.loi_nhan_xet_so_theo_doi, 'loiphe')}
-                    className="text-stone-700 hover:text-stone-900 text-xs font-medium flex items-center gap-1"
-                  >
-                    {copiedField === 'loiphe' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedField === 'loiphe' ? 'Đã chép' : 'Sao chép'}
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCommentBankItems(StorageService.getCommentBank());
+                        setShowCommentBankModal(true);
+                      }}
+                      className="text-stone-600 hover:text-emerald-700 text-xs font-semibold flex items-center gap-1"
+                    >
+                      <BookmarkCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Chọn từ Ngân hàng</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(evaluationResult.loi_nhan_xet_so_theo_doi, 'loiphe')}
+                      className="text-stone-700 hover:text-stone-900 text-xs font-medium flex items-center gap-1"
+                    >
+                      {copiedField === 'loiphe' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedField === 'loiphe' ? 'Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   value={evaluationResult.loi_nhan_xet_so_theo_doi}
@@ -2466,6 +2657,208 @@ export const GradingStudio: React.FC<Props> = ({ onEvaluationSaved, selectedStud
       {/* Printable Sheet Modal */}
       {showPrintModal && evaluationResult && (
         <PrintEvaluationSheet evaluation={evaluationResult} onClose={() => setShowPrintModal(false)} />
+      )}
+
+      {/* COMMENT BANK PICKER MODAL */}
+      {showCommentBankModal && evaluationResult && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden animate-scaleUp">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between shrink-0">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold">
+                  <BookmarkCheck className="w-3.5 h-3.5" />
+                  <span>Ngân hàng lời nhận xét chuẩn Thông tư 27</span>
+                </div>
+                <h3 className="text-base sm:text-lg font-bold">
+                  Chọn mẫu nhận xét theo tình huống cho em: <span className="text-emerald-200">{evaluationResult.ten_hoc_sinh}</span>
+                </h3>
+                <p className="text-xs text-emerald-100">
+                  Dạng bài: <strong>{evaluationResult.the_loai_bai_van}</strong> • Mức độ hiện tại: <strong>{evaluationResult.muc_do_dat_duoc}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCommentBankModal(false)}
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg font-bold transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Search & Filter */}
+            <div className="p-4 bg-stone-50 border-b border-stone-200 space-y-3 shrink-0">
+              <div className="relative">
+                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={commentBankSearch}
+                  onChange={(e) => setCommentBankSearch(e.target.value)}
+                  placeholder="Tìm theo tình huống (ví dụ: 'chính tả', 'so sánh', 'câu dài', 'sơ sài', 'tả cảnh')..."
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm text-stone-800 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {commentBankToast && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-900 font-bold flex items-center gap-2 animate-fadeIn">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>{commentBankToast}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Content List */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+              {(() => {
+                const searchQ = commentBankSearch.toLowerCase().trim();
+                const filtered = commentBankItems.filter((item) => {
+                  if (searchQ) {
+                    const matchTitle = item.tinhHuong.toLowerCase().includes(searchQ);
+                    const matchMoTa = item.moTaTinhHuong.toLowerCase().includes(searchQ);
+                    const matchVo = item.loiNhanXetVaoVo.toLowerCase().includes(searchQ);
+                    const matchTheLoai = item.theLoai.toLowerCase().includes(searchQ);
+                    const matchTags = item.tags.some((t) => t.toLowerCase().includes(searchQ));
+                    return matchTitle || matchMoTa || matchVo || matchTheLoai || matchTags;
+                  }
+                  return true;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-8 text-center text-stone-500 text-xs">
+                      Không tìm thấy mẫu lời nhận xét phù hợp với từ khoá. Thầy/Cô hãy thử tìm từ khoá khác!
+                    </div>
+                  );
+                }
+
+                return filtered.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-4 rounded-2xl border border-stone-200 hover:border-emerald-400 bg-white shadow-2xs space-y-3 transition"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-stone-800 text-white">
+                          {item.theLoai}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            item.mucDo === 'Hoàn thành tốt'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : item.mucDo === 'Hoàn thành'
+                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          {item.mucDo}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-extrabold text-sm text-stone-900">{item.tinhHuong}</h4>
+                      {item.moTaTinhHuong && (
+                        <p className="text-xs text-stone-500 italic mt-0.5">Biểu hiện: {item.moTaTinhHuong}</p>
+                      )}
+                    </div>
+
+                    {/* Lời phê vào vở */}
+                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-amber-950 block">
+                          📝 Lời phê vào vở học sinh:
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900">
+                          ⚡ {item.loiNhanXetVaoVo.trim().split(/\s+/).length} từ • Viết tay nhanh
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-800 italic leading-relaxed">
+                        "{item.loiNhanXetVaoVo}"
+                      </p>
+                    </div>
+
+                    {/* Lời vào sổ theo dõi */}
+                    <div className="p-2.5 bg-stone-50 border border-stone-200 rounded-xl space-y-1">
+                      <span className="text-[11px] font-bold text-stone-700 block">
+                        📋 Lời ghi Sổ theo dõi đánh giá:
+                      </span>
+                      <p className="text-xs text-stone-600 italic">"{item.loiNhanXetSoTheoDoi}"</p>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-stone-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateResultField('loi_nhan_xet_hoc_sinh', item.loiNhanXetVaoVo);
+                          setCommentBankToast(`Đã áp dụng lời phê vào vở cho em ${evaluationResult.ten_hoc_sinh}!`);
+                          setTimeout(() => {
+                            setCommentBankToast(null);
+                            setShowCommentBankModal(false);
+                          }, 1200);
+                        }}
+                        className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Áp dụng vào vở</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateResultField('loi_nhan_xet_so_theo_doi', item.loiNhanXetSoTheoDoi);
+                          setCommentBankToast(`Đã áp dụng vào Sổ theo dõi cho em ${evaluationResult.ten_hoc_sinh}!`);
+                          setTimeout(() => {
+                            setCommentBankToast(null);
+                            setShowCommentBankModal(false);
+                          }, 1200);
+                        }}
+                        className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Áp dụng vào sổ</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateResultField('loi_nhan_xet_hoc_sinh', item.loiNhanXetVaoVo);
+                          updateResultField('loi_nhan_xet_so_theo_doi', item.loiNhanXetSoTheoDoi);
+                          if (item.mucDo) {
+                            updateResultField('muc_do_dat_duoc', item.mucDo);
+                          }
+                          setCommentBankToast(`Đã áp dụng đầy đủ vào vở & sổ cho em ${evaluationResult.ten_hoc_sinh}!`);
+                          setTimeout(() => {
+                            setCommentBankToast(null);
+                            setShowCommentBankModal(false);
+                          }, 1200);
+                        }}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-xs cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Áp dụng cả hai</span>
+                      </button>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-stone-50 border-t border-stone-200 flex items-center justify-between text-xs shrink-0">
+              <span className="text-stone-500">
+                Thầy/Cô có thể chỉnh sửa thêm sau khi áp dụng vào bài làm.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCommentBankModal(false)}
+                className="px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

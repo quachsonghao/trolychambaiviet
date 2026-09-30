@@ -162,3 +162,17 @@ export interface TotalOverallStats {
     dungPercent: number;
   };
 }
+
+export interface CommentBankItem {
+  id: string;
+  phanMon: 'viet' | 'ltvc';
+  theLoai: string;
+  tinhHuong: string;
+  moTaTinhHuong: string;
+  mucDo: AchievementLevel;
+  loiNhanXetVaoVo: string;
+  loiNhanXetSoTheoDoi: string;
+  bienPhapKhacPhuc: string;
+  tags: string[];
+  isCustom?: boolean;
+}

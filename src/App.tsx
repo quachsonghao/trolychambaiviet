@@ -8,13 +8,14 @@ import { Header } from './components/Header';
 import { GradingStudio } from './components/GradingStudio';
 import { StudentHistoryView } from './components/StudentHistoryView';
 import { ErrorAnalyticsView } from './components/ErrorAnalyticsView';
+import { CommentBankView } from './components/CommentBankView';
 import { HandbookView } from './components/HandbookView';
 import { StorageService } from './services/api';
 import { EvaluationResult } from './types';
-import { ShieldCheck, Heart } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'grading' | 'history' | 'analytics' | 'handbook'>('grading');
+  const [activeTab, setActiveTab] = useState<'grading' | 'history' | 'analytics' | 'commentBank' | 'handbook'>('grading');
   const [evaluationCount, setEvaluationCount] = useState<number>(0);
   const [targetStudentForGrading, setTargetStudentForGrading] = useState<string | null>(null);
 
@@ -72,6 +73,14 @@ export default function App() {
             onSelectStudentForGrading={handleSelectStudentForGrading}
             onHistoryChanged={refreshCount}
             onNavigateToHistory={() => setActiveTab('history')}
+          />
+        )}
+
+        {activeTab === 'commentBank' && (
+          <CommentBankView
+            onSelectCommentForGrading={() => {
+              setActiveTab('grading');
+            }}
           />
         )}
 
